@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام إدارة المقهى</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="script.js">
+</head>
+<body>
+
+<!-- حماية -->
+<script>
+if(localStorage.getItem("loggedIn") !== "true"){
+  // uncomment to enforce login: window.location.href="login.html";
+}
+</script>
+
+<!-- HEADER -->
+<div class="header">
+  <h1>☕  BEN HCINE Family Cafe </h1>
+  <div class="header-btns">
+    <button class="btn-logout" onclick="logout()">خروج 🚪</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('pos')">🛒 نقطة البيع</button>
+  <button class="tab" onclick="showTab('products')">📦 المنتجات</button>
+  <button class="tab" onclick="showTab('sales')"> المبيعات</button>
+  <button class="tab" onclick="showTab('stats')"> الإحصائيات</button>
+</div>
+
+<div id="mainContent">
+
+<div id="sec-pos" class="section active">
+
+  <!-- تنبيه نقص المخزون -->
+  <div class="alert-box" id="stockAlert">
+    <div class="alert-icon">⚠️</div>
+    <div>
+      <div style="font-weight:700;color:#9f1239;margin-bottom:4px">تنبيه: مخزون منخفض!</div>
+      <div class="alert-list" id="alertList"></div>
+    </div>
+  </div>
+
+  <div class="pos-grid">
+
+    <div class="card">
+      <h2>🍽️ قائمة المنتجات</h2>
+      <div class="menu-grid" id="menuGrid"></div>
+    </div>
+
+    <div class="card">
+      <h2> الطلب الحالي</h2>
+
+      <div class="customer-row">
+        <input type="text" id="customerName" placeholder="اسم الزبون (اختياري)" />
+      </div>
+
+      <div id="orderItems">
+        <div class="empty"><div class="empty-icon">🛒</div>اضغط على منتج لإضافته</div>
+      </div>
+
+      <div class="total-row">
+        <span class="total-label">المجموع الكلي</span>
+        <span class="total-amount" id="totalAmount">0.00 د.م</span>
+      </div>
+
+      <button class="btn-confirm" id="confirmBtn" onclick="placeOrder()">✅ تأكيد الطلب</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="sec-products" class="section">
+  <div class="card">
+    <h2>➕ إضافة / تعديل منتج</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>اسم المنتج</label>
+        <input type="text" id="pName" placeholder="مثال: كابوتشينو" />
+      </div>
+      <div class="form-group">
+        <label>السعر (د.م)</label>
+        <input type="number" id="pPrice" placeholder="0.00" min="0" step="0.5" />
+      </div>
+      <div class="form-group">
+        <label>الكمية في المخزون</label>
+        <input type="number" id="pStock" placeholder="0" min="0" />
+      </div>
+      <button class="btn-add" onclick="saveProduct()"> حفظ</button>
+    </div>
+    <input type="hidden" id="editProductId" />
+  </div>
+
+  <div class="card">
+    <h2>📦 قائمة المنتجات</h2>
+    <input type="text" class="search-bar" id="searchProducts" placeholder="🔍 بحث في المنتجات..." oninput="renderProductsTable()" />
+    <div style="overflow-x:auto">
+      <table class="products-table">
+        <thead>
+          <tr>
+            <th>المنتج</th>
+            <th>السعر</th>
+            <th>المخزون</th>
+            <th>الحالة</th>
+            <th>إجراءات</th>
+          </tr>
+        </thead>
+        <tbody id="productsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="sec-sales" class="section">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin-bottom:0">📋 سجل المبيعات</h2>
+      <button class="clear-btn" onclick="clearSales()">🗑️ مسح السجل</button>
+    </div>
+    <input type="text" class="search-bar" id="searchSales" placeholder="🔍 بحث بالزبون أو رقم الفاتورة..." oninput="renderSales()" />
+    <div id="salesList"></div>
+  </div>
+</div>
+
+<div id="sec-stats" class="section">
+  <div class="stats-grid" id="statsGrid"></div>
+
+  <div class="card">
+    <h2>📈 أكثر المنتجات مبيعاً</h2>
+    <div id="topProducts"></div>
+  </div>
+
+  <div class="card">
+    <h2>📅 مبيعات آخر 7 أيام</h2>
+    <div id="dailySales"></div>
+  </div>
+</div>
+
+</div><!-- end mainContent -->
+
+<div class="modal-overlay" id="invoiceModal">
+  <div class="modal">
+    <div class="invoice" id="invoiceContent"></div>
+    <div class="modal-actions">
+      <button class="btn-print" onclick="window.print()">🖨️ طباعة الفاتورة</button>
+      <button class="btn-close-modal" onclick="closeModal()">✖ إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ─── DATA ─── */
+let products = JSON.parse(localStorage.getItem('cafe_products') || 'null') || [
+  {id:'p1',name:'قهوة عربية',price:10,stock:50},
+  {id:'p2',name:'كابوتشينو',price:25,stock:30},
+  {id:'p3',name:'لاتيه',price:28,stock:25},
+  {id:'p4',name:'شاي',price:15,stock:40},
+  {id:'p5',name:'عصير برتقال',price:20,stock:8},
+  {id:'p6',name:'كيك شوكولاتة',price:35,stock:3},
+  {id:'p7',name:'كرواسان',price:18,stock:15},
+  {id:'p8',name:'ماء معدني',price:8,stock:2}
+];
+let sales = JSON.parse(localStorage.getItem('cafe_sales') || '[]');
+let order = [];
+const LOW_STOCK = 5;
+
+function saveProducts(){localStorage.setItem('cafe_products',JSON.stringify(products))}
+function saveSales(){localStorage.setItem('cafe_sales',JSON.stringify(sales))}
+
+function showTab(name){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+name).classList.add('active');
+  event.target.classList.add('active');
+  if(name==='products') renderProductsTable();
+  if(name==='sales') renderSales();
+  if(name==='stats') renderStats();
+}
+
+function toast(msg,dur=2500){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),dur);
+}
+
+function checkStockAlerts(){
+  const low=products.filter(p=>p.stock<=LOW_STOCK && p.stock>0);
+  const out=products.filter(p=>p.stock===0);
+  const alertBox=document.getElementById('stockAlert');
+  const alertList=document.getElementById('alertList');
+  const all=[...out.map(p=>`❌ ${p.name}: نفذ المخزون`),...low.map(p=>`⚠️ ${p.name}: متبقي ${p.stock} فقط`)];
+  if(all.length){
+    alertList.innerHTML=all.join('<br>');
+    alertBox.classList.add('show');
+  } else {
+    alertBox.classList.remove('show');
+  }
+}
+
+function renderMenu(){
+  const grid=document.getElementById('menuGrid');
+  grid.innerHTML='';
+  products.forEach(p=>{
+    const out=p.stock===0;
+    const low=p.stock>0&&p.stock<=LOW_STOCK;
+    const d=document.createElement('div');
+    d.className='menu-card'+(low?' low-stock':'')+(out?' out-stock':'');
+    d.innerHTML=`
+      <div class="name">${p.name}</div>
+      <div class="price">${p.price} د.م</div>
+      <div class="${out?'stock-badge':'stock-ok'}">${out?'نفد المخزون':low?`متبقي ${p.stock}`:`متوفر ✓`}</div>`;
+    if(!out) d.onclick=()=>addToOrder(p);
+    grid.appendChild(d);
+  });
+  checkStockAlerts();
+}
+
+function addToOrder(p){
+  const existing=order.find(x=>x.id===p.id);
+  const inOrder=existing?existing.qty:0;
+  if(inOrder>=p.stock){toast('⚠️ الكمية المطلوبة تتجاوز المخزون المتاح');return;}
+  if(existing) existing.qty++;
+  else order.push({id:p.id,name:p.name,price:p.price,qty:1});
+  renderOrder();
+}
+
+function changeQty(id,delta){
+  const item=order.find(x=>x.id===id);
+  if(!item)return;
+  const prod=products.find(p=>p.id===id);
+  item.qty+=delta;
+  if(item.qty<1){order=order.filter(x=>x.id!==id);}
+  else if(item.qty>prod.stock){item.qty=prod.stock;toast('⚠️ وصلت للحد الأقصى المتاح');}
+  renderOrder();
+}
+
+function removeItem(id){order=order.filter(x=>x.id!==id);renderOrder();}
+
+function renderOrder(){
+  const div=document.getElementById('orderItems');
+  if(order.length===0){
+    div.innerHTML='<div class="empty"><div class="empty-icon">🛒</div>اضغط على منتج لإضافته</div>';
+    document.getElementById('totalAmount').textContent='0.00 د.م';
+    return;
+  }
+  let total=0;
+  div.innerHTML=order.map(i=>{
+    total+=i.price*i.qty;
+    return `<div class="order-item">
+      <span class="oname">${i.name}</span>
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="changeQty('${i.id}',-1)">−</button>
+        <span class="qty-num">${i.qty}</span>
+        <button class="qty-btn" onclick="changeQty('${i.id}',1)">+</button>
+      </div>
+      <span class="item-sub">${(i.price*i.qty).toFixed(2)}</span>
+      <button class="del-btn" onclick="removeItem('${i.id}')" title="حذف">✕</button>
+    </div>`;
+  }).join('');
+  document.getElementById('totalAmount').textContent=total.toFixed(2)+' د.م';
+}
+
+function placeOrder(){
+  if(order.length===0){toast('⚠️ الطلب فارغ');return;}
+  const customer=document.getElementById('customerName').value.trim()||'زبون';
+  const total=order.reduce((s,i)=>s+i.price*i.qty,0);
+  const invNum='INV-'+Date.now().toString().slice(-6);
+  const now=new Date();
+  const dateStr=now.toLocaleDateString('ar-MA',{year:'numeric',month:'long',day:'numeric'});
+  const timeStr=now.toLocaleTimeString('ar-MA',{hour:'2-digit',minute:'2-digit'});
+
+  const sale={id:invNum,customer,items:[...order],total,date:dateStr,time:timeStr,ts:Date.now()};
+  sales.unshift(sale);
+  saveSales();
+
+  order.forEach(oi=>{
+    const prod=products.find(p=>p.id===oi.id);
+    if(prod) prod.stock=Math.max(0,prod.stock-oi.qty);
+  });
+  saveProducts();
+
+  showInvoice(sale);
+  order=[];
+  document.getElementById('customerName').value='';
+  renderOrder();
+  renderMenu();
+  toast('✅ تم تأكيد الطلب وحفظه');
+}
+
+/* ─── INVOICE ─── */
+function showInvoice(sale){
+  const rows=sale.items.map(i=>`
+    <tr>
+      <td>${i.name}</td>
+      <td style="text-align:center">${i.qty}</td>
+      <td style="text-align:center">${i.price.toFixed(2)}</td>
+      <td style="text-align:center">${(i.price*i.qty).toFixed(2)}</td>
+    </tr>`).join('');
+
+  document.getElementById('invoiceContent').innerHTML=`
+    <div class="inv-header">
+      <div class="inv-logo">☕</div>
+      <div class="inv-title">مقهى النجمة الذهبية</div>
+      <div class="inv-sub">فاتورة مبيعات رسمية</div>
+    </div>
+    <hr class="inv-divider">
+    <div class="inv-meta">
+      <div><strong>رقم الفاتورة:</strong> ${sale.id}</div>
+      <div><strong>الزبون:</strong> ${sale.customer}</div>
+    </div>
+    <div class="inv-meta">
+      <div><strong>التاريخ:</strong> ${sale.date}</div>
+      <div><strong>الوقت:</strong> ${sale.time}</div>
+    </div>
+    <hr class="inv-divider">
+    <table class="inv-table">
+      <thead><tr><th>الصنف</th><th style="text-align:center">الكمية</th><th style="text-align:center">السعر</th><th style="text-align:center">المجموع</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="inv-total-row">
+      <span>المجموع الكلي</span>
+      <span>${sale.total.toFixed(2)} د.م</span>
+    </div>
+    <div class="inv-footer">شكراً لزيارتكم — نتطلع لرؤيتكم مجدداً ☕</div>`;
+
+  document.getElementById('invoiceModal').classList.add('open');
+}
+
+function closeModal(){document.getElementById('invoiceModal').classList.remove('open')}
+
+/* ─── PRODUCTS CRUD ─── */
+function saveProduct(){
+  const name=document.getElementById('pName').value.trim();
+  const price=parseFloat(document.getElementById('pPrice').value);
+  const stock=parseInt(document.getElementById('pStock').value);
+  const editId=document.getElementById('editProductId').value;
+
+  if(!name||isNaN(price)||isNaN(stock)){toast('⚠️ يرجى تعبئة جميع الحقول');return;}
+
+  if(editId){
+    const p=products.find(x=>x.id===editId);
+    if(p){p.name=name;p.price=price;p.stock=stock;}
+    document.getElementById('editProductId').value='';
+    document.querySelector('.btn-add').textContent='💾 حفظ';
+    toast('✅ تم تحديث المنتج');
+  } else {
+    if(products.find(x=>x.name===name)){toast('⚠️ هذا المنتج موجود مسبقاً');return;}
+    products.push({id:'p'+Date.now(),name,price,stock});
+    toast('✅ تمت إضافة المنتج');
+  }
+  saveProducts();
+  document.getElementById('pName').value='';
+  document.getElementById('pPrice').value='';
+  document.getElementById('pStock').value='';
+  renderProductsTable();
+  renderMenu();
+}
+
+function editProduct(id){
+  const p=products.find(x=>x.id===id);
+  if(!p)return;
+  document.getElementById('pName').value=p.name;
+  document.getElementById('pPrice').value=p.price;
+  document.getElementById('pStock').value=p.stock;
+  document.getElementById('editProductId').value=id;
+  document.querySelector('.btn-add').textContent='✏️ تحديث';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function deleteProduct(id){
+  if(!confirm('هل تريد حذف هذا المنتج؟'))return;
+  products=products.filter(x=>x.id!==id);
+  saveProducts();
+  renderProductsTable();
+  renderMenu();
+  toast('🗑️ تم حذف المنتج');
+}
+
+function renderProductsTable(){
+  const q=(document.getElementById('searchProducts')?.value||'').toLowerCase();
+  const filtered=products.filter(p=>p.name.toLowerCase().includes(q));
+  const tbody=document.getElementById('productsTableBody');
+  if(filtered.length===0){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:20px;color:#a8a29e">لا توجد منتجات</td></tr>';return;}
+  tbody.innerHTML=filtered.map(p=>`
+    <tr>
+      <td><strong>${p.name}</strong></td>
+      <td>${p.price.toFixed(2)} د.م</td>
+      <td class="${p.stock===0?'stock-low':p.stock<=LOW_STOCK?'stock-low':'stock-ok-text'}">${p.stock}</td>
+      <td>${p.stock===0?'<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:6px;font-size:.8rem">نفد</span>':p.stock<=LOW_STOCK?'<span style="background:#fef3c7;color:#d97706;padding:2px 8px;border-radius:6px;font-size:.8rem">منخفض</span>':'<span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:6px;font-size:.8rem">متوفر</span>'}</td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap">
+        <button class="btn-edit" onclick="editProduct('${p.id}')">✏️ تعديل</button>
+        <button class="btn-del" onclick="deleteProduct('${p.id}')">🗑️ حذف</button>
+      </td>
+    </tr>`).join('');
+}
+
+/* ─── SALES HISTORY ─── */
+function renderSales(){
+  const q=(document.getElementById('searchSales')?.value||'').toLowerCase();
+  const filtered=sales.filter(s=>s.customer.toLowerCase().includes(q)||s.id.toLowerCase().includes(q));
+  const div=document.getElementById('salesList');
+  if(filtered.length===0){div.innerHTML='<div class="empty"><div class="empty-icon">📋</div>لا توجد مبيعات مسجلة</div>';return;}
+  div.innerHTML=filtered.map(s=>`
+    <div class="sale-row" onclick="showInvoice(${JSON.stringify(s).replace(/"/g,'&quot;')})">
+      <div class="sale-meta">
+        <span class="sale-inv">${s.id}</span>
+        <span class="sale-customer">👤 ${s.customer}</span>
+        <span class="sale-total">${s.total.toFixed(2)} د.م</span>
+      </div>
+      <div class="sale-date">📅 ${s.date} — 🕐 ${s.time}</div>
+      <div class="sale-items">${s.items.map(i=>`${i.name} ×${i.qty}`).join(' · ')}</div>
+    </div>`).join('');
+}
+
+function clearSales(){
+  if(!confirm('هل تريد مسح سجل المبيعات كاملاً؟'))return;
+  sales=[];saveSales();renderSales();toast('🗑️ تم مسح السجل');
+}
+
+function renderStats(){
+  const total=sales.reduce((s,x)=>s+x.total,0);
+  const today=new Date().toLocaleDateString('ar-MA',{year:'numeric',month:'long',day:'numeric'});
+  const todaySales=sales.filter(s=>s.date===today);
+  const todayTotal=todaySales.reduce((s,x)=>s+x.total,0);
+  const itemCounts={};
+  sales.forEach(s=>s.items.forEach(i=>{itemCounts[i.name]=(itemCounts[i.name]||0)+i.qty;}));
+  const topItems=Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  document.getElementById('statsGrid').innerHTML=`
+    <div class="stat-card"><div class="stat-val">${sales.length}</div><div class="stat-lbl">إجمالي الفواتير</div></div>
+    <div class="stat-card"><div class="stat-val">${total.toFixed(0)}</div><div class="stat-lbl">إجمالي الإيرادات (د.م)</div></div>
+    <div class="stat-card"><div class="stat-val">${todaySales.length}</div><div class="stat-lbl">مبيعات اليوم</div></div>
+    <div class="stat-card"><div class="stat-val">${todayTotal.toFixed(0)}</div><div class="stat-lbl">إيرادات اليوم (د.م)</div></div>
+    <div class="stat-card"><div class="stat-val">${products.length}</div><div class="stat-lbl">عدد المنتجات</div></div>
+    <div class="stat-card"><div class="stat-val">${products.filter(p=>p.stock===0).length}</div><div class="stat-lbl">منتجات نفدت</div></div>`;
+
+  // Top products
+  const topDiv=document.getElementById('topProducts');
+  if(topItems.length===0){topDiv.innerHTML='<div class="empty">لا توجد بيانات كافية</div>';return;}
+  const maxQty=topItems[0][1];
+  topDiv.innerHTML=topItems.map(([name,qty])=>`
+    <div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:.88rem;margin-bottom:4px">
+        <span style="font-weight:600">${name}</span><span style="color:#c2410c;font-weight:700">${qty} وحدة</span>
+      </div>
+      <div style="background:#f1f5f9;border-radius:30px;height:10px;overflow:hidden">
+        <div style="width:${(qty/maxQty*100).toFixed(0)}%;height:100%;background:linear-gradient(90deg,#c2410c,#f59e0b);border-radius:30px;transition:.6s"></div>
+      </div>
+    </div>`).join('');
+
+  // Last 7 days
+  const days7=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const label=d.toLocaleDateString('ar-MA',{month:'short',day:'numeric'});
+    const ds=d.toLocaleDateString('ar-MA',{year:'numeric',month:'long',day:'numeric'});
+    const total=sales.filter(s=>s.date===ds).reduce((s,x)=>s+x.total,0);
+    days7.push({label,total});
+  }
+  const maxDay=Math.max(...days7.map(d=>d.total),1);
+  document.getElementById('dailySales').innerHTML=`
+    <div style="display:flex;align-items:flex-end;gap:8px;height:120px;padding-bottom:8px">
+      ${days7.map(d=>`
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end">
+          <div style="font-size:.72rem;color:#c2410c;font-weight:700">${d.total>0?d.total.toFixed(0):''}</div>
+          <div style="width:100%;background:linear-gradient(180deg,#f59e0b,#c2410c);border-radius:6px 6px 0 0;min-height:4px;height:${(d.total/maxDay*90).toFixed(0)}px;transition:.6s"></div>
+          <div style="font-size:.75rem;color:#78716c;text-align:center">${d.label}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function logout(){
+  localStorage.removeItem('loggedIn');
+  window.location.href='login.html';
+}
+
+renderMenu();
+</script>
+</body>
+</html>
